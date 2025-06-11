@@ -1,0 +1,341 @@
+setwd("C:/Users/Lenovo/OneDrive/R/Year 2 Working Directory/Nina's ABE work 25/Presentation work")
+library(readr)
+FilteredReadyForHoming <- read_csv("FilteredReadyForHoming.csv")
+
+#checking how many colonies there are in the dataset
+unique(FilteredReadyForHoming$Colony)
+
+#there are a few starting locations 
+#investigating to work out what they are
+
+library(dplyr)
+
+###figuring out which islands the 3 letter colony codes are referring to
+#cp = copeland 54.695059872059
+#lun = lundy 51.1823991
+#ram 51.8692647
+#rum 57.034196
+#sk =skomer 51.7364634
+#skok = skokholm 51.6981347
+
+
+#Adding a column to show the difference in latitude compared to the respective island
+# Initialize the new column
+FilteredReadyForHoming$Lat_difference <- NA
+# Assign latitude differences for each colony group directly 
+# Copeland
+if (any(grepl("cp", FilteredReadyForHoming$Colony))) {
+  FilteredReadyForHoming$Lat_difference[grepl("cp", FilteredReadyForHoming$Colony)] <- 
+    FilteredReadyForHoming$Latitude[grepl("cp", FilteredReadyForHoming$Colony)] - 54.695059872059
+}
+# Skomer
+if (any(grepl("sk", FilteredReadyForHoming$Colony))) {
+  FilteredReadyForHoming$Lat_difference[grepl("sk", FilteredReadyForHoming$Colony)] <- 
+    FilteredReadyForHoming$Latitude[grepl("sk", FilteredReadyForHoming$Colony)] - 51.7364634
+}
+# Lundy
+if (any(grepl("lun", FilteredReadyForHoming$Colony))) {
+  FilteredReadyForHoming$Lat_difference[grepl("lun", FilteredReadyForHoming$Colony)] <- 
+    FilteredReadyForHoming$Latitude[grepl("lun", FilteredReadyForHoming$Colony)] - 51.1823991
+}
+# Ramsey
+if (any(grepl("ram", FilteredReadyForHoming$Colony))) {
+  FilteredReadyForHoming$Lat_difference[grepl("ram", FilteredReadyForHoming$Colony)] <- 
+    FilteredReadyForHoming$Latitude[grepl("ram", FilteredReadyForHoming$Colony)] - 51.8692647
+}
+# Rum
+if (any(grepl("rum", FilteredReadyForHoming$Colony))) {
+  FilteredReadyForHoming$Lat_difference[grepl("rum", FilteredReadyForHoming$Colony)] <- 
+    FilteredReadyForHoming$Latitude[grepl("rum", FilteredReadyForHoming$Colony)] - 57.034196
+}
+# Skokholm
+if (any(grepl("skok", FilteredReadyForHoming$Colony))) {
+  FilteredReadyForHoming$Lat_difference[grepl("skok", FilteredReadyForHoming$Colony)] <- 
+    FilteredReadyForHoming$Latitude[grepl("skok", FilteredReadyForHoming$Colony)] - 51.6981347
+}
+
+
+
+#Calculating Longitudinal differences
+
+FilteredReadyForHoming$Lon_difference <- NA
+# Assign latitude differences for each colony group directly 
+# Copeland
+if (any(grepl("cp", FilteredReadyForHoming$Colony))) {
+  FilteredReadyForHoming$Lon_difference[grepl("cp", FilteredReadyForHoming$Colony)] <- 
+    FilteredReadyForHoming$Longitude[grepl("cp", FilteredReadyForHoming$Colony)] + 5.314404
+}
+# Skomer
+if (any(grepl("sk", FilteredReadyForHoming$Colony))) {
+  FilteredReadyForHoming$Lon_difference[grepl("sk", FilteredReadyForHoming$Colony)] <- 
+    FilteredReadyForHoming$Longitude[grepl("sk", FilteredReadyForHoming$Colony)] + 5.29628
+}
+#Only doing this for copeland and skomer as these are my islands of interest
+
+
+head(FilteredReadyForHoming$Lat_difference) #testing
+summary(FilteredReadyForHoming$Lat_difference)
+
+
+#Splitting the data frame into 1 dataframe for each journey, stored in a list
+list2 <- list()
+list2 <- split(FilteredReadyForHoming, FilteredReadyForHoming$TripIdentity)
+
+cp_dfs <- subset(FilteredReadyForHoming, Colony == "cp")
+sk_dfs <- subset(FilteredReadyForHoming, Colony == "sk")
+
+
+#####Plotting on heatmap####
+
+#starting with just copeland
+library(sf)
+library(dplyr)
+library(sf)
+
+
+#converting into an sf object
+gps_sf <- cp_dfs %>%
+  st_as_sf(coords = c("Longitude", "Latitude"), crs = 4326)  # WGS 84
+
+# Base heatmap with density
+ggplot(gps_sf) +
+  stat_density_2d(aes(x = st_coordinates(gps_sf)[,1],
+                      y = st_coordinates(gps_sf)[,2],
+                      fill = after_stat(level)),
+                  geom = "polygon",
+                  contour = TRUE,
+                  n=200,
+                  alpha = 0.6) +
+  scale_fill_viridis_c() +
+  labs(title = "Heatmap of Foraging from Copeland",
+       x = "Longitude", y = "Latitude") +
+  coord_sf() +
+  theme_minimal()
+
+#Adding a basemap
+library(rnaturalearth)
+library(viridis)
+
+gps_sf <- st_transform(gps_sf, crs = 4326) #Projecting the data to WGS84
+
+#Filtering for sensible map bounds (as there are some outliers)
+gps_map <- gps_sf %>%
+  filter(
+    between(st_coordinates(.)[,1], -11, -2),    # longitude
+    between(st_coordinates(.)[,2], 50, 57)      # latitude
+  )
+
+land <- ne_countries(scale = "medium", returnclass = "sf") #getting the basemap
+
+#plotting
+ggplot() +
+  geom_sf(data = land, fill = "grey90", color = "grey60") +
+  stat_density_2d(
+    data = gps_map,
+    aes(x = st_coordinates(gps_map)[,1],
+        y = st_coordinates(gps_map)[,2],
+        fill = after_stat(level)),
+    geom = "polygon",
+    contour = TRUE, #draws density bands
+    alpha = 0.6
+  ) +
+  scale_fill_viridis_c(option = "C") +
+  coord_sf(xlim = c(-11, -2), ylim = c(50, 56), expand = FALSE) +
+  labs(title = "Heatmap of Copeland Shearwater's Foraging Range",
+       x = "Longitude", y = "Latitude") +
+  theme_minimal()
+
+
+
+sk_sf <- sk_dfs %>%
+  st_as_sf(coords = c("Longitude", "Latitude"), crs = 4326)  # WGS 84
+
+#Adding a basemap
+library(rnaturalearth)
+library(viridis)
+
+gps_sf <- st_transform(sk_sf, crs = 4326) #Projecting the data to WGS84
+
+#Filtering for sensible map bounds (as there are some outliers)
+gps_map <- gps_sf %>%
+  filter(
+    between(st_coordinates(.)[,1], -11, -2),    # longitude
+    between(st_coordinates(.)[,2], 50, 56)      # latitude
+  )
+
+land <- ne_countries(scale = "medium", returnclass = "sf") #getting the basemap
+
+#plotting
+ggplot() +
+  geom_sf(data = land, fill = "grey90", color = "grey60") +
+  stat_density_2d(
+    data = sk_sf,
+    aes(x = st_coordinates(sk_sf)[,1],
+        y = st_coordinates(sk_sf)[,2],
+        fill = after_stat(level)),
+    geom = "polygon",
+    contour = TRUE, #draws density bands
+    alpha = 0.6
+  ) +
+  scale_fill_viridis_c(option = "C") +
+  coord_sf(xlim = c(-11, -2), ylim = c(50, 56), expand = FALSE) +
+  labs(title = "Heatmap of Skomer Shearwater's foraging range",
+       x = "Longitude", y = "Latitude") +
+  theme_minimal()
+
+
+
+##Creating simplified plot for "methods" section of poster
+library(maps)
+library(ggplot2)
+library(mapdata)
+
+# Get map data for the UK and Ireland
+world_map <- map_data("worldHires", region = c("UK", "Ireland"))
+
+# Plot, focusing on the Irish Sea area
+ggplot() +
+  geom_polygon(data = world_map, aes(x = long, y = lat, group = group), 
+               fill = "aquamarine4", color = "black") +
+  coord_fixed(xlim = c(-7, -2), ylim = c(51.5, 55.5)) +
+  theme_void()
+
+length(unique(sk_dfs$TripIdentity))
+
+
+
+#####HISTOGRAMS######
+
+
+#Looking at the Maps skomer looks very bimodal, lets investigate
+
+FilteredReadyForHoming$Distance_from_home <- NA #initialise
+
+copeland <- c(-5.314404, 54.6950598720)
+
+skomer <- c(-5.29628, 51.7364634)
+
+library(geosphere)
+
+#Calculating Distance from home island each trip
+FilteredReadyForHoming <- FilteredReadyForHoming %>%
+  mutate(
+    Distance_from_home = case_when(
+      Colony == "cp" ~ distHaversine(cbind(Longitude, Latitude), copeland),
+      Colony == "sk" ~ distHaversine(cbind(Longitude, Latitude), skomer),
+      TRUE ~ NA_real_
+    )
+  )
+FilteredReadyForHoming$Distance_from_home <- FilteredReadyForHoming$Distance_from_home/1000 #converting to km instead of m
+#After completing this step make sure to re-run the creation of list2 and sk_dfs etc. 
+
+#copied for ease
+list2 <- list()
+list2 <- split(FilteredReadyForHoming, FilteredReadyForHoming$TripIdentity)
+cp_dfs <- subset(FilteredReadyForHoming, Colony == "cp")
+sk_dfs <- subset(FilteredReadyForHoming, Colony == "sk")
+
+#Calculating max distance from home per trip (trips stored in list2)
+sk_max <- numeric(0)
+for(i in seq_along(list2)) {
+  trip <- list2[[i]]
+  # Subset to only Skomer colony trips
+  sk_subset <- subset(trip, Colony == "sk")
+  if(nrow(sk_subset) > 0) {
+    # Calculate max distance for this trip (before filtering)
+    max_dist <- max(sk_subset$Distance_from_home, na.rm = TRUE)
+    if(max_dist < 530) {
+      sk_max <- c(sk_max, max_dist)
+    }
+  }
+}
+
+
+#Histogram of Skomer
+hist(sk_max, 
+     breaks = 20,
+     main = "Skomer Shearwaters Maximum Distance Each Trip",
+     xlab = "Distance from Skomer (km)",
+     col = "deepskyblue3", border = "darkcyan")
+
+
+library(diptest)
+
+#Dip test
+dip.test(sk_max) #significant (bimodal)
+
+
+
+#looking to see if fitting 2 models is good
+library(mixtools)
+
+fit <- normalmixEM(sk_max, k = 2)  # Try fitting 2 modes
+summary(fit)
+
+# Plot histogram with overlaid Gaussian components
+hist(sk_max, breaks = 20, freq = FALSE, col = "deepskyblue2", border = "darkcyan",
+     main = "Gaussian Mixture Model Fit", xlab = "Max. Distance from Skomer Each Trip (km)")
+# Add the two fitted Gaussian components
+curve(fit$lambda[1] * dnorm(x, mean = fit$mu[1], sd = fit$sigma[1]),
+      col = "red", lwd
+      = 2, add = TRUE)
+curve(fit$lambda[2] * dnorm(x, mean = fit$mu[2], sd = fit$sigma[2]),
+      col = "navy", lwd = 2, add = TRUE)
+
+# Function to find the intersection point of two Gaussians
+find_intersection <- function(lambda, mu, sigma) {
+  f <- function(x) {
+    lambda[1] * dnorm(x, mean = mu[1], sd = sigma[1]) -
+      lambda[2] * dnorm(x, mean = mu[2], sd = sigma[2])
+  }
+  
+  # safe interval around the intersection point
+  uniroot(f, lower = 100, upper = 200)$root
+}
+
+# Apply to fitted model
+split_point <- find_intersection(fit$lambda, fit$mu, fit$sigma)
+
+# Adding a vertical line to the above histogram with mixture model
+# Then add the vertical line at the intersection
+abline(v = split_point, col = "black", lty = 2, lwd = 3)
+text(split_point, 0.02, paste0("Split = ", round(split_point, 1)), pos = 4)
+
+
+
+
+#Investigating for Copeland
+cp_max <- numeric(0)
+for(i in seq_along(list2)) {
+  trip <- list2[[i]]
+  # Subset to only Skomer colony trips
+  cp_subset <- subset(trip, Colony == "cp")
+  if(nrow(cp_subset) > 0) {
+    # Calculate max distance for this trip (before filtering)
+    max_dist <- max(cp_subset$Distance_from_home, na.rm = TRUE)
+    # Only keep trips where max distance < 700
+    if(max_dist < 530) {
+      cp_max <- c(cp_max, max_dist)
+    }
+  }
+}
+
+#Dip test
+dip.test(cp_max) #Not significant (as expected)
+
+hist(cp_max, 
+     freq = FALSE,
+     breaks = 60,
+     main = "Max. Distance from Copeland Each Trip",
+     xlab = "Max. Distance from Copeland Each Trip (km)",
+     col = "deepskyblue2", border = "darkcyan")
+
+
+
+
+
+
+
+
+
+
