@@ -3,18 +3,22 @@
 
 
 #Creating a summary dataframe containing a mean latitude, a date, colony of origin and a couple of other variables used in my initial exploratory analysis
-#will summarise each trip (stored as dfs in list2) into one row of data
+#will summarise each bird (stored as dfs in list1) into one row of data
+
+
+#splitting by birdlist1 <- list()
+list1 <- split(FilteredReadyForHoming, FilteredReadyForHoming$Ring)
 
 ###Getting one date for each journey
 dates <- list()
 
-for(i in seq_along(list2)) {
-  dates[[i]] <- (mean(list2[[1]]$Timestamp))
+for(i in seq_along(list1)) {
+  dates[[i]] <- (mean(list1[[1]]$Timestamp))
 }
 
 
-for (i in seq_along(list2)) {
-  df <- list2[[i]]
+for (i in seq_along(list1)) {
+  df <- list1[[i]]
   mean_time <- mean(df$Timestamp)
   dates[[i]] <- mean_time
 }
@@ -23,8 +27,8 @@ for (i in seq_along(list2)) {
 
 #Calculating the total distance of each trip
 total_dist <- list()
-for(i in seq_along(list2)) {
-  total_dist[[i]] <- (sum(list2[[i]]$TotalDist, na.rm = TRUE))
+for(i in seq_along(list1)) {
+  total_dist[[i]] <- (sum(list1[[i]]$TotalDist, na.rm = TRUE))
 }
 
 #Calculating maximum and minimum relative latitude for each journey
@@ -32,12 +36,12 @@ for(i in seq_along(list2)) {
 max_north_difference <- list()
 max_south_difference <- list()
 
-for(i in 1:length(list2)){
-  max_north_difference[[i]] <- max(list2[[i]]$Lat_difference)
+for(i in 1:length(list1)){
+  max_north_difference[[i]] <- max(list1[[i]]$Lat_difference)
 }
 
-for(i in 1:length(list2)){
-  max_south_difference[[i]] <- min(list2[[i]]$Lat_difference) 
+for(i in 1:length(list1)){
+  max_south_difference[[i]] <- min(list1[[i]]$Lat_difference) 
 }
 
 head(max_south_difference) #testing
@@ -48,20 +52,27 @@ head(max_south_difference) #testing
 #wanted to get just one value for colony from each df in list 2 (as they should all be the same)
 #couldn't use mode() as charachter data so creating a function to find the most common charachter
 mode_char <- function(x) unique(x)[which.max(tabulate(match(x, unique(x))))] 
-mode_char(list2[[1]]$Colony) #testing
+mode_char(list1[[1]]$Colony) #testing
 
 colony_id <- list()
-for (i in seq_along(list2)) {
-  colony_id[[i]] <- mode_char(list2[[i]]$Colony)
+for (i in seq_along(list1)) {
+  colony_id[[i]] <- mode_char(list1[[i]]$Colony)
 }
 colony_id[[5]]
 summary(colony_id) #testing
 
+#getting a ring number for each bird
+
+rings <- list()
+for (i in seq_along(list1)) {
+  rings[[i]] <- mode_char(list1[[i]]$Ring)
+}
+
 
 ####Calculating mean latitude differences
 mean_latitude <- list()
-for(i in 1:length(list2)){
-  mean_latitude[[i]] <- mean(list2[[i]]$Lat_difference)}
+for(i in 1:length(list1)){
+  mean_latitude[[i]] <- mean(list1[[i]]$Lat_difference)}
 
 summary(mean_latitude)
 
@@ -72,24 +83,25 @@ print(lengths_list)
 
 
 #binding my summary data into a dataframe
-Summary_data <- data.frame(Date = unlist(dates), 
+Summary_birds <- data.frame(Date = unlist(dates), 
                            Max_relative_latitude = unlist(max_north_difference), 
                            Min_relative_latitude = unlist(max_south_difference),
                            Colony = unlist(colony_id),
                            Mean_latitude = unlist(mean_latitude),
-                           Trip_distance = unlist(total_dist))
+                           Trip_distance = unlist(total_dist),
+                           Ring = unlist(rings))
 
 #converting the times back into years (because for some reason the unit was seconds from 1970)
-Summary_data$Date <- as.POSIXct(Summary_data$Date, origin = "1970-01-01 00:00:00")
+Summary_birds$Date <- as.POSIXct(Summary_birds$Date, origin = "1970-01-01 00:00:00")
 
 #This adds a year column to the summary data for the plotting of boxplots
 library(lubridate)
-Summary_data <- Summary_data %>%
+Summary_birds <- Summary_birds %>%
   mutate(Year = year(as.POSIXct(Date)))
 
 #Making a little dataframe of each island to reduce the amount of filtering that I need to do 
-Summary_cp <- subset(Summary_data, Colony == "cp")
-Summary_sk <- subset(Summary_data, Colony == "sk")
+Summary_cp_birds <- subset(Summary_birds, Colony == "cp")
+Summary_sk_birds <- subset(Summary_birds, Colony == "sk")
 
 
 #####Getting values for SST##
@@ -215,7 +227,7 @@ sst_summary <- sst_df %>%
   ungroup()
 
 # Join SST summary with Mean_latitude by Year
-combined_cp <- Summary_cp %>%
+combined_cp1 <- Summary_cp_birds %>%
   left_join(sst_summary, by = "Year") %>%
   group_by(Year) %>%
   # Find the lat closest to Mean_latitude
@@ -223,7 +235,7 @@ combined_cp <- Summary_cp %>%
   slice_min(order_by = lat_diff, n = 1) %>%
   ungroup()
 
-combined_sk <- Summary_sk %>%
+combined_sk1 <- Summary_sk_birds %>%
   left_join(sst_summary, by = "Year") %>%
   group_by(Year) %>%
   # Find the lat closest to Mean_latitude
@@ -245,7 +257,7 @@ combined_all$mean_sst_celsius <- kelvin_to_celsius(combined_all$mean_sst)
 # Plot zoom settings and scaling functions
 zoom_factor <- 5  # Zoom for the Y axis (latitude)
 zoom_factor_sst <- 0.8  # Additional zoom for SST curve only
-offset <- 2  # Shift SST curve down to avoid overlap
+offset <- 1.4  # Shift SST curve down to avoid overlap
 
 # Calculate zoomed latitude range
 lat_range <- range(combined_all$Mean_latitude, na.rm = TRUE)
@@ -269,9 +281,11 @@ scale_lat_to_sst <- function(x) {
 #scaling functions are necessary otherwise 
 
 
+Summary_cp_sk_birds <- bind_rows(Summary_cp_birds, Summary_sk_birds)
+
 ggplot() +
-  geom_smooth(data = Summary_cp_sk, aes(x = Year, y = Mean_latitude), method = "lm", se = FALSE, size = 1, color = "slateblue") +
-  geom_point(data = Summary_cp_sk, aes(x = Year, y = Mean_latitude), size = 0.03, alpha =0.35, color = "slateblue") +
+  geom_smooth(data = Summary_cp_sk_birds, aes(x = Year, y = Mean_latitude), method = "lm", se = FALSE, size = 1, color = "slateblue") +
+  geom_point(data = Summary_cp_sk_birds, aes(x = Year, y = Mean_latitude), size = 0.03, alpha =0.35, color = "slateblue") +
   geom_smooth(data = combined_all, aes(x = Year, y = scale_sst_to_lat(mean_sst_celsius)), method = "loess", span = 0.7, se = FALSE, size = 1, color = "red", linetype = "dashed") +
   scale_y_continuous(
     name = "Mean Relative Latitude",
