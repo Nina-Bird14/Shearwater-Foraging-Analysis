@@ -243,7 +243,7 @@ combined_sk1 <- Summary_sk_birds %>%
   slice_min(order_by = lat_diff, n = 1) %>%
   ungroup()
 
-combined_all <- bind_rows(combined_cp, combined_sk)
+combined_all <- bind_rows(combined_cp1, combined_sk1)
 
 #Adding celcius
 kelvin_to_celsius <- function(k) {
