@@ -1,0 +1,154 @@
+#first creating df sk_trips which contains a Date, Mean latitude,
+#Ring number, Maximum distance from home, Year and trip type (long or short)
+#for every trip taken by Skomer birds
+
+sk_trips <- list()
+sk_trips <- split(sk_dfs, sk_dfs$TripIdentity)
+
+#getting just "short" trips
+sk_short_trips <- list()
+sk_short_trips <- Filter(function(df) max(df$Distance_from_home, na.rm = TRUE) < 151, sk_trips)
+
+#"long" trips
+sk_long_trips <- list()
+sk_long_trips <- Filter(function(df) max(df$Distance_from_home, na.rm = TRUE) > 151, sk_trips)
+
+#Finding the maximum distance from home for all of the trips                        
+Max_short_distance <- list()
+for(i in seq_along(sk_short_trips)) {
+  Max_short_distance[[i]] <- max(sk_short_trips[[i]]$Distance_from_home)
+}
+
+Max_long_distance <- list()
+for(i in seq_along(sk_long_trips)) {
+  Max_long_distance[[i]] <- max(sk_long_trips[[i]]$Distance_from_home)
+}
+
+test <- sk_short_trips[[5]] #testing
+
+#finding mean latitude for all trips
+short_sk_mean <- list()
+for(i in seq_along(sk_short_trips)){
+  short_sk_mean[[i]] <- mean(sk_short_trips[[i]]$Lat_difference)
+}
+
+long_sk_mean <- list()
+for(i in seq_along(sk_long_trips)){
+  long_sk_mean[[i]] <- mean(sk_long_trips[[i]]$Lat_difference)
+}
+
+#getting a date for all trips
+short_dates <- list()
+for (i in seq_along(sk_short_trips)) {
+  df <- sk_short_trips[[i]]
+  mean_time <- mean(df$Timestamp)
+  short_dates[[i]] <- mean_time
+}
+
+long_dates <- list()
+for (i in seq_along(sk_long_trips)) {
+  df <- sk_short_trips[[i]]
+  mean_time <- mean(df$Timestamp)
+  long_dates[[i]] <- mean_time
+}
+
+ #Getting a ring number for all trips                       
+mode_char <- function(x) unique(x)[which.max(tabulate(match(x, unique(x))))] 
+short_rings <- list()
+for (i in seq_along(sk_short_trips)) {
+  short_rings[[i]] <- mode_char(sk_short_trips[[i]]$Ring)
+}
+
+long_rings <- list()
+for (i in seq_along(sk_long_trips)) {
+  long_rings[[i]] <- mode_char(sk_long_trips[[i]]$Ring)
+}
+head(long_rings)
+
+#merging into dataframes
+short_sk_df <- data.frame(Date = unlist(short_dates), 
+                          Mean_latitude = unlist(short_sk_mean),
+                          Ring = unlist(short_rings),
+                          Max_distance = unlist(Max_short_distance))
+
+short_sk_df$Year <- year(short_sk_df$Date) #adding a year column 
+
+long_sk_df <- data.frame(Date = unlist(long_dates), 
+                         Mean_latitude = unlist(long_sk_mean),
+                         Ring = unlist(long_rings),
+                         Max_distance = unlist(Max_long_distance))
+
+long_sk_df$Year <- year(long_sk_df$Date)
+
+#Adding a new column, TripType to label the short and long trips so they can be distinguished once merged                        
+short_sk_df$TripType <- "Short"
+long_sk_df$TripType  <- "Long"
+
+#Combining the dataframes
+sk_trips <- bind_rows(short_sk_df, long_sk_df)
+
+
+##FISHERS for short-> long vs No switch
+# Identify and label switches in trip type within individuals
+df <- sk_trips %>%
+  arrange(Ring, Year) %>%
+  group_by(Ring) %>%
+  mutate(
+    prev_type = lag(TripType),
+    prev_year = lag(Year),
+    SwitchDir = case_when(
+      prev_type == "Short" & TripType == "Long" ~ "ShortToLong",
+      prev_type == "Long" & TripType == "Short" ~ "LongToShort",
+      prev_type == TripType ~ "NoSwitch",
+      TRUE ~ NA_character_
+    )
+  ) %>%
+  ungroup()
+
+#Join with SST data
+df <- df %>%
+  left_join(north_sk_sst_means, by = "Year") %>%
+  rename(SST = mean_sst) %>%
+  left_join(north_sk_sst_means %>% rename(prev_year = Year, prev_SST = mean_sst), 
+            by = "prev_year") %>%
+  mutate(
+    delta_SST = SST - prev_SST,
+    SST_increase = if_else(delta_SST > 0, "Increase", "Decrease")
+  )
+
+# Filter for Short→Long and  NoSwitch only (not interested in long to short for this test)
+df_filtered <- df %>%
+  filter(SwitchDir %in% c("ShortToLong", "NoSwitch"), !is.na(SST_increase))
+
+#Create contingency table and test
+cont_table <- table(df_filtered$SwitchDir, df_filtered$SST_increase)
+fisher_result <- fisher.test(cont_table)
+chisq_result <- chisq.test(cont_table)
+
+# Output
+print(cont_table)
+print(fisher_result)
+                        
+
+                    
+# Convert to data frame to plot as a bar chart
+df <- as.data.frame(as.table(cont_table))
+colnames(df) <- c("Response", "SST_Change", "Freq")
+
+
+# Plot
+ggplot(df, aes(x = SST_Change, y = Freq, fill = Response)) +
+  geom_bar(stat = "identity", position = "fill", width = 0.9) +
+  ylab("Proportion") +
+  scale_fill_manual(values = c("NoSwitch" = "#efda96", "ShortToLong" = "#f76363")) +
+  theme_minimal()   
+
+#Initially plotted as a mosaic plot with shading corresponding to pearson's residuals
+#more informative but changed to bar as trickier to read, I have left the code here for interest
+ 
+library(vcd)                       
+mosaic(cont_table,
+       shade = TRUE,
+       legend = TRUE,
+       main = "Mosaic Plot of Foraging Strategy vs Direction")                       
+                        
